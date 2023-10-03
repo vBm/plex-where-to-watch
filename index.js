@@ -23,42 +23,26 @@ class Main {
         };
     }
 
-    async generateTable(showDetails, providers) {
-        const providerIds = providers.map(provider => Object.keys(provider)[0]);
-
-        let table;
-        if (this.tableType === "streamable") {
-            table = new Table({
-                head: ["Show Name", ...providers.map(provider => provider[Object.keys(provider)[0]])]
-            });
-        } else {
-            table = new Table({
-                head: ["Show Name", ...providers.map(provider => provider[Object.keys(provider)[0]])]
-            });
-        }
-
-        // Iterate through each show detail
-        showDetails.forEach(show => {
-            const row = []; // Create a new row for each show
-            row.push(show.title); // Add the show title
-
-            // Iterate through each provider
-            providerIds.forEach(providerId => {
-                const hasOffer = show.offers.some(
-                    offer => parseInt(offer.provider_id) === parseInt(providerId)
-                );
-
-                // Add a checkmark or 'X' based on whether the show is available for the provider
-                row.push(hasOffer ? clc.green("✓") : clc.red("✗"));
-            });
-
-            if (this.tableType === "all" || row.slice(1).some(cell => cell === clc.green("✓"))) {
-                // Add the row to the table only if it's "all" table or at least one provider has the show
-                table.push(row);
-            }
+    async generateTableForProvider(providerId, showDetails, providers) {
+        const filteredShows = showDetails.filter(show => {
+            return show.offers.some(offer => parseInt(offer.provider_id) === parseInt(providerId));
         });
 
-        return table.toString(); // Return the formatted table as a string
+        let table = new Table({
+            head: ["Show Name", providers.find(provider => parseInt(Object.keys(provider)[0]) === parseInt(providerId))[providerId]]
+        });
+
+        filteredShows.forEach(show => {
+            const row = [];
+            row.push(show.title);
+
+            const hasOffer = show.offers.some(offer => parseInt(offer.provider_id) === parseInt(providerId));
+            row.push(hasOffer ? clc.green("✓") : clc.red("✗"));
+
+            table.push(row);
+        });
+
+        return table.toString();
     }
 
     async start() {
@@ -80,9 +64,13 @@ class Main {
 
             progressBar.stop();
 
-            const table = await this.generateTable(showDetails, providers);
+            for (const provider of providers) {
+                const providerId = parseInt(Object.keys(provider)[0]);
+                const table = await this.generateTableForProvider(providerId, showDetails, providers);
 
-            console.log(table);
+                console.log(`Table for Provider ${providerId}:`);
+                console.log(table);
+            }
         } catch (error) {
             console.error(error.message);
         }
