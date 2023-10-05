@@ -55,10 +55,17 @@ class Main {
             const showDetails = [];
 
             for (let i = 0; i < tvShows.length; i++) {
-                const searchResult = await this.justwatch.searchShow(tvShows[i], providers);
+                const searchResult = await this.justwatch.searchShow(tvShows[i].title, providers);
                 progressBar.update(i + 1);
                 if (searchResult && searchResult.length > 0) {
-                    showDetails.push(searchResult[0]);
+                    const show = searchResult[0];
+
+                    showDetails.push(show);
+
+                    const providerIds = show.offers.map(offer => parseInt(offer.provider_id));
+                    const showProviders = providers.filter(provider => providerIds.includes(parseInt(Object.keys(provider)[0])));
+
+                    await this.plex.setLabel(tvShows[i].id, showProviders);
                 }
             }
 

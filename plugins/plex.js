@@ -21,9 +21,43 @@ export default class PlexPlugin {
 
             const data = await response.json();
             const shows = data.MediaContainer.Metadata;
-            return shows.map(show => show.title);
+            return shows.map(show => ({
+                title: show.title,
+                id: show.ratingKey
+            }));
         } catch (error) {
             throw new Error(`Error fetching TV shows from Plex: ${error.message}`);
         }
     }
+
+    async setLabel(show, providers) {
+        if (providers.length === 0) {
+            return;
+        }
+
+        const label = providers.map(provider => {
+            const providerId = Object.keys(provider)[0];
+            const providerName = provider[providerId];
+            return `label[].tag.tag=${providerName}`;
+        }).join('&');
+
+        try {
+            const response = await fetch(`${config.plex.base_url}library/metadata/${show}?X-Plex-Token=${config.plex.token}&${label}`, {
+                method: 'PUT',
+                headers: {
+                    'Accept': 'application/json'
+                }
+            });
+
+            if (!response.ok) {
+                throw new Error(`Error updating labels for show ${show}: ${response.statusText}`);
+            }
+
+            return await response.json();
+        } catch (error) {
+            throw new Error(`Error updating labels for show ${show}: ${error.message}`);
+        }
+    }
+
+
 }
