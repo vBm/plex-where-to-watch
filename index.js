@@ -73,9 +73,10 @@ class Main {
 
             for (const provider of providers) {
                 const providerId = parseInt(Object.keys(provider)[0]);
+                const providerName = provider[providerId];
                 const table = await this.generateTableForProvider(providerId, showDetails, providers);
 
-                console.log(`Table for Provider ${providerId}:`);
+                console.log(`Table for ${clc.bold.underline(providerName)}:`);
                 console.log(table);
             }
         } catch (error) {
