@@ -1,0 +1,17 @@
+{
+    "plex": {
+        "token": "YOUR_TOKEN",
+        "base_url": "http://localhost:32400/",
+        "library": 2
+    },
+    "justwatch": {
+        "locale": "en_CA",
+        "providers": [
+            "Amazon Prime Video",
+            "Netflix",
+            "Disney Plus",
+            "Apple TV Plus"
+        ]
+    },
+    "table": "streamable"
+}
