@@ -63,7 +63,9 @@ class Main {
                     showDetails.push(show);
 
                     const providerIds = show.offers.map(offer => parseInt(offer.provider_id));
-                    const showProviders = providers.filter(provider => providerIds.includes(parseInt(Object.keys(provider)[0])));
+                    const showProviders = providers.filter(provider => {
+                        return providerIds.includes(parseInt(Object.keys(provider)[0]));
+                    });
 
                     await this.plex.setLabel(tvShows[i].id, showProviders);
                 }
@@ -83,8 +85,6 @@ class Main {
             console.error(error.message);
         }
     }
-
-
 }
 
 const main = new Main();
