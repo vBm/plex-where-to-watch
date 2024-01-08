@@ -1,6 +1,5 @@
 import PlexPlugin from './plugins/plex.js';
 import JustWatchPlugin from './plugins/justwatch.js';
-import config from './config.json' assert { type: 'json' };
 import cliProgress from 'cli-progress';
 import Table from 'cli-table3';
 import clc from 'cli-color';
@@ -9,7 +8,6 @@ class Main {
     constructor() {
         this.plex = new PlexPlugin();
         this.justwatch = new JustWatchPlugin();
-        this.tableType = config.table || "all";
     }
 
     async showProgressBar(total) {
