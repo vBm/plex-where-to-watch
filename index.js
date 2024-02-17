@@ -1,5 +1,6 @@
 import PlexPlugin from './plugins/plex.js';
 import JustWatchPlugin from './plugins/justwatch.js';
+import TVMazePlugin from './plugins/tvmaze.js';
 import cliProgress from 'cli-progress';
 import Table from 'cli-table3';
 import clc from 'cli-color';
@@ -8,6 +9,7 @@ class Main {
     constructor() {
         this.plex = new PlexPlugin();
         this.justwatch = new JustWatchPlugin();
+        this.tvMaze = new TVMazePlugin();
     }
 
     async showProgressBar(total) {
@@ -54,6 +56,8 @@ class Main {
 
             for (let i = 0; i < tvShows.length; i++) {
                 const searchResult = await this.justwatch.searchShow(tvShows[i].title, providers);
+                const tvMazeData = await this.tvMaze.searchShow(tvShows[i].title);
+
                 progressBar.update(i + 1);
                 if (searchResult && searchResult.length > 0) {
                     const show = searchResult[0];
@@ -65,7 +69,13 @@ class Main {
                         return providerIds.includes(parseInt(Object.keys(provider)[0]));
                     });
 
-                    await this.plex.setLabel(tvShows[i].id, showProviders);
+                    if (tvMazeData && tvMazeData.status === "Ended") {
+                        const ended = [{ "999999999": "Ended" }];
+                        const combinedLabel = [...showProviders, ...ended];
+                        await this.plex.setLabel(tvShows[i].id, combinedLabel);
+                    } else {
+                        await this.plex.setLabel(tvShows[i].id, showProviders);
+                    }
                 }
             }
 
