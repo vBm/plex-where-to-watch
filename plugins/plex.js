@@ -1,5 +1,8 @@
-import config from './../config.json' assert { type: 'json' };
+import config from './../config.json' with { type: 'json' };
 
+/**
+ * Plex Media Server plugin for fetching TV shows and managing labels
+ */
 export default class PlexPlugin {
     constructor() {
         this.baseURL = config.plex.base_url;
@@ -7,12 +10,17 @@ export default class PlexPlugin {
         this.library = config.plex.library;
     }
 
+    /**
+     * Fetch all TV shows from the configured Plex library
+     * @returns {Promise<Array<{title: string, id: string}>>} Array of TV shows
+     */
     async getTVShows() {
         try {
-            const response = await fetch(`${this.baseURL}library/sections/${this.library}/all?X-Plex-Token=${this.token}`, {
-                headers: {
-                    'Accept': 'application/json'
-                }
+            const url = new URL(`library/sections/${this.library}/all`, this.baseURL);
+            url.searchParams.set('X-Plex-Token', this.token);
+
+            const response = await fetch(url, {
+                headers: { 'Accept': 'application/json' }
             });
 
             if (!response.ok) {
@@ -20,7 +28,8 @@ export default class PlexPlugin {
             }
 
             const data = await response.json();
-            const shows = data.MediaContainer.Metadata;
+            const shows = data.MediaContainer?.Metadata ?? [];
+
             return shows.map(show => ({
                 title: show.title,
                 id: show.ratingKey
@@ -30,23 +39,30 @@ export default class PlexPlugin {
         }
     }
 
+    /**
+     * Set streaming provider labels on a Plex TV show
+     * @param {string} show - The Plex rating key for the show
+     * @param {Array<Object>} providers - Array of provider objects
+     * @returns {Promise<Object|void>} Response from Plex API
+     */
     async setLabel(show, providers) {
         if (providers.length === 0) {
             return;
         }
 
-        const label = providers.map(provider => {
-            const providerId = Object.keys(provider)[0];
-            const providerName = provider[providerId];
-            return `label[].tag.tag=${providerName}`;
-        }).join('&');
+        const url = new URL(`library/metadata/${show}`, this.baseURL);
+        url.searchParams.set('X-Plex-Token', this.token);
+
+        // Add provider labels to URL params
+        for (const provider of providers) {
+            const [providerId, providerName] = Object.entries(provider)[0];
+            url.searchParams.append('label[].tag.tag', providerName);
+        }
 
         try {
-            const response = await fetch(`${config.plex.base_url}library/metadata/${show}?X-Plex-Token=${config.plex.token}&${label}`, {
+            const response = await fetch(url, {
                 method: 'PUT',
-                headers: {
-                    'Accept': 'application/json'
-                }
+                headers: { 'Accept': 'application/json' }
             });
 
             if (!response.ok) {
@@ -58,6 +74,4 @@ export default class PlexPlugin {
             throw new Error(`Error updating labels for show ${show}: ${error.message}`);
         }
     }
-
-
 }

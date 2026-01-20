@@ -1,17 +1,17 @@
 {
   "name": "plex-where-to-watch-node",
+  "version": "1.0.0",
+  "description": "Find where your Plex TV shows are available to stream",
   "module": "index.js",
   "type": "module",
+  "scripts": {
+    "start": "bun run index.js",
+    "dev": "bun --watch index.js"
+  },
   "devDependencies": {
     "bun-types": "latest"
   },
   "peerDependencies": {
     "typescript": "^5.0.0"
-  },
-  "dependencies": {
-    "cli-color": "^2.0.3",
-    "cli-progress": "^3.12.0",
-    "cli-table3": "^0.6.3",
-    "progress": "^2.0.3"
   }
 }

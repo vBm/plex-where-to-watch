@@ -1,4 +1,8 @@
-import config from '../config.json' assert { type: 'json' };
+import config from '../config.json' with { type: 'json' };
+
+/**
+ * JustWatch API plugin for finding streaming availability
+ */
 
 export default class JustWatchPlugin {
     constructor() {
@@ -6,6 +10,12 @@ export default class JustWatchPlugin {
         this.providers = config.justwatch.providers;
     }
 
+    /**
+     * Make a GraphQL request to JustWatch API
+     * @param {Object} query - GraphQL query object with operationName and query string
+     * @param {Object} variables - Variables for the GraphQL query
+     * @returns {Promise<Object>} API response data
+     */
     async makeApiRequest(query, variables) {
         try {
             const response = await fetch("https://apis.justwatch.com/graphql", {
@@ -17,13 +27,13 @@ export default class JustWatchPlugin {
                 },
                 body: JSON.stringify({
                     operationName: query.operationName,
-                    variables: variables,
+                    variables,
                     query: query.query,
                 }),
             });
 
             if (!response.ok) {
-                const errorResponse = await response.json();
+                const errorResponse = await response.json().catch(() => ({}));
                 console.error(`API request failed: ${response.status} - ${response.statusText}`, errorResponse);
                 throw new Error(`API request failed: ${response.status} - ${response.statusText}`);
             }
@@ -35,6 +45,10 @@ export default class JustWatchPlugin {
         }
     }
 
+    /**
+     * Get available streaming providers from JustWatch
+     * @returns {Promise<Array<Object>>} Array of provider objects with ID and name
+     */
     async getAvailableProviders() {
         try {
             const query = {
@@ -81,20 +95,36 @@ export default class JustWatchPlugin {
             };
 
             const dataRaw = await this.makeApiRequest(query, { platform: "WEB", country: this.country });
-            const data = dataRaw.data.packages;
+            const data = dataRaw.data?.packages ?? [];
 
-            const allProviders = data.reduce((foo, provider) => {
+            const allProviders = data.reduce((acc, provider) => {
                 if (this.providers.includes(provider.clearName)) {
-                    foo.push({ [provider.packageId]: provider.clearName });
+                    acc.push({ [provider.packageId]: provider.clearName });
                 }
-                return foo;
+                return acc;
             }, []);
+
+            // Debug: Check for missing providers
+            const foundProviderNames = allProviders.map(p => Object.values(p)[0]);
+            const missingProviders = this.providers.filter(name => !foundProviderNames.includes(name));
+
+            if (missingProviders.length > 0) {
+                console.warn(`⚠️  Provider name mismatch - not found in JustWatch API: ${missingProviders.join(', ')}`);
+                console.warn(`   Available providers in ${this.country}: ${data.map(p => p.clearName).slice(0, 10).join(', ')}...`);
+            }
+
             return allProviders;
         } catch (error) {
             throw new Error(`Error fetching JustWatch providers: ${error.message}`);
         }
     }
 
+    /**
+     * Search for a TV show on JustWatch and get streaming availability
+     * @param {string} showTitle - Title of the show to search for
+     * @param {Array<Object>} providers - Array of provider objects to filter by
+     * @returns {Promise<Array<Object>>} Array with show data and offers, or empty array if not found
+     */
     async searchShow(showTitle, providers) {
         try {
             const query = {
@@ -140,52 +170,51 @@ export default class JustWatchPlugin {
                 `,
             };
 
-            const dataRaw = await this.makeApiRequest(query, { country: this.country, language: "en", first: 4, filter: { searchQuery: showTitle } });
-            const show = dataRaw.data.popularTitles?.edges[0]?.node;
-
-            if (!show || !show.offers || !show.offers[0]) {
-                return []; // No valid offers found, return an empty array
-            }
-
-            const filteredOffers = show.offers || [];
-
-            if (filteredOffers.length === 0) {
-                return []; // No valid offers found, return an empty array
-            }
-
-            const providerIds = providers.map(provider => Object.keys(provider)[0]); // Extract provider IDs
-
-            const filteredProviders = {};
-            filteredOffers.forEach(offer => {
-                const providerId = offer.package.packageId.toString();  // Adjust the field name if needed
-
-                if (providerIds.includes(providerId)) {
-                    if (!filteredProviders[providerId]) {
-                        filteredProviders[providerId] = [];
-                    }
-
-                    filteredProviders[providerId].push(offer);
-                }
+            const dataRaw = await this.makeApiRequest(query, {
+                country: this.country,
+                language: "en",
+                first: 4,
+                filter: { searchQuery: showTitle }
             });
 
-            const mappedOffers = filteredOffers.map(offer => ({
-                monetization_type: offer.monetizationType,
-                provider_id: offer.package.packageId,  // Adjust the field name if needed
-                package_short_name: offer.package.shortName,  // Adjust the field name if needed
-                package_clear_name: offer.package.clearName
-            }));
+            const show = dataRaw.data?.popularTitles?.edges?.[0]?.node;
 
-            const finalData = {
-                title: show.content.title,
+            if (!show?.offers?.length) {
+                return [];
+            }
+
+            const providerIds = providers.map(provider => Object.keys(provider)[0]);
+            const filteredProviders = new Set();
+
+            const mappedOffers = show.offers
+                .filter(offer => {
+                    const providerId = offer.package?.packageId?.toString();
+                    if (providerId && providerIds.includes(providerId)) {
+                        filteredProviders.add(providerId);
+                        return true;
+                    }
+                    return false;
+                })
+                .map(offer => ({
+                    monetization_type: offer.monetizationType,
+                    provider_id: offer.package.packageId,
+                    package_short_name: offer.package.shortName,
+                    package_clear_name: offer.package.clearName
+                }));
+
+            if (mappedOffers.length === 0) {
+                return [];
+            }
+
+            return [{
+                title: show.content?.title,
                 id: show.objectId,
-                offers: mappedOffers.filter(offer => filteredProviders[offer.provider_id])
-            };
-
-            return [finalData]; // Return data as an array
+                offers: mappedOffers
+            }];
 
         } catch (error) {
             console.error(`Error searching show on JustWatch: ${error.message}`);
-            // Handle the error appropriately
+            return [];
         }
     }
 }

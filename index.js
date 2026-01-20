@@ -1,10 +1,11 @@
 import PlexPlugin from './plugins/plex.js';
 import JustWatchPlugin from './plugins/justwatch.js';
 import TVMazePlugin from './plugins/tvmaze.js';
-import cliProgress from 'cli-progress';
-import Table from 'cli-table3';
-import clc from 'cli-color';
+import { ProgressBar, Table, style } from './utils/terminal.js';
 
+/**
+ * Main application class for Plex Where to Watch
+ */
 class Main {
     constructor() {
         this.plex = new PlexPlugin();
@@ -12,88 +13,126 @@ class Main {
         this.tvMaze = new TVMazePlugin();
     }
 
-    async showProgressBar(total) {
-        const progressBar = new cliProgress.SingleBar({}, cliProgress.Presets.shades_classic);
-        progressBar.start(total, 0);
-
-        return {
-            increment: () => progressBar.increment(),
-            update: (current) => progressBar.update(current),
-            stop: () => progressBar.stop(),
-        };
+    /**
+     * Create and return a progress bar instance
+     * @param {number} total - Total number of items
+     * @returns {ProgressBar} Progress bar instance
+     */
+    createProgressBar(total) {
+        return new ProgressBar(total, {
+            width: 40,
+            complete: '█',
+            incomplete: '░',
+            showValue: true
+        });
     }
 
-    async generateTableForProvider(providerId, showDetails, providers) {
-        const filteredShows = showDetails.filter(show => {
-            return show.offers.some(offer => parseInt(offer.provider_id) === parseInt(providerId));
+    /**
+     * Generate a table showing which shows are available on a specific provider
+     * @param {number} providerId - Provider ID to filter by
+     * @param {Array<Object>} showDetails - Array of show data with offers
+     * @param {Array<Object>} providers - Array of all providers
+     * @returns {string} Formatted table string
+     */
+    generateTableForProvider(providerId, showDetails, providers) {
+        const filteredShows = showDetails.filter(show =>
+            show.offers.some(offer => parseInt(offer.provider_id) === parseInt(providerId))
+        );
+
+        const providerName = providers.find(
+            provider => parseInt(Object.keys(provider)[0]) === parseInt(providerId)
+        )?.[providerId] ?? 'Unknown Provider';
+
+        const table = new Table({
+            head: ['Show Name', providerName]
         });
 
-        let table = new Table({
-            head: ["Show Name", providers.find(provider => parseInt(Object.keys(provider)[0]) === parseInt(providerId))[providerId]]
-        });
-
-        filteredShows.forEach(show => {
-            const row = [];
-            row.push(show.title);
-
-            const hasOffer = show.offers.some(offer => parseInt(offer.provider_id) === parseInt(providerId));
-            row.push(hasOffer ? clc.green("✓") : clc.red("✗"));
-
-            table.push(row);
-        });
+        for (const show of filteredShows) {
+            const hasOffer = show.offers.some(
+                offer => parseInt(offer.provider_id) === parseInt(providerId)
+            );
+            table.push([
+                show.title,
+                hasOffer ? style.green('✓') : style.red('✗')
+            ]);
+        }
 
         return table.toString();
     }
 
+    /**
+     * Main application logic
+     */
     async start() {
         try {
+            console.log(style.bold('\n🎬 Plex Where to Watch\n'));
+
+            // Fetch TV shows and providers
+            console.log('Fetching TV shows from Plex...');
             const tvShows = await this.plex.getTVShows();
+            console.log(style.green(`✓ Found ${tvShows.length} TV shows\n`));
+
+            console.log('Fetching streaming providers...');
             const providers = await this.justwatch.getAvailableProviders();
+            console.log(style.green(`✓ Monitoring ${providers.length} providers\n`));
 
-            const progressBar = await this.showProgressBar(tvShows.length);
-
+            // Process shows with progress bar
+            const progressBar = this.createProgressBar(tvShows.length);
             const showDetails = [];
 
+            console.log('Processing shows...');
             for (let i = 0; i < tvShows.length; i++) {
-                const searchResult = await this.justwatch.searchShow(tvShows[i].title, providers);
-                const tvMazeData = await this.tvMaze.searchShow(tvShows[i].title);
+                const show = tvShows[i];
+
+                // Search for show on JustWatch and TVMaze
+                const [searchResult, tvMazeData] = await Promise.all([
+                    this.justwatch.searchShow(show.title, providers),
+                    this.tvMaze.searchShow(show.title)
+                ]);
 
                 progressBar.update(i + 1);
-                if (searchResult && searchResult.length > 0) {
-                    const show = searchResult[0];
 
-                    showDetails.push(show);
+                if (searchResult?.length > 0) {
+                    const showData = searchResult[0];
+                    showDetails.push(showData);
 
-                    const providerIds = show.offers.map(offer => parseInt(offer.provider_id));
-                    const showProviders = providers.filter(provider => {
-                        return providerIds.includes(parseInt(Object.keys(provider)[0]));
-                    });
+                    // Extract provider IDs from offers
+                    const providerIds = showData.offers.map(offer => parseInt(offer.provider_id));
+                    const showProviders = providers.filter(provider =>
+                        providerIds.includes(parseInt(Object.keys(provider)[0]))
+                    );
 
-                    if (tvMazeData && tvMazeData.status === "Ended") {
-                        const ended = [{ "999999999": "Ended" }];
-                        const combinedLabel = [...showProviders, ...ended];
-                        await this.plex.setLabel(tvShows[i].id, combinedLabel);
-                    } else {
-                        await this.plex.setLabel(tvShows[i].id, showProviders);
-                    }
+                    // Add "Ended" label if show has ended
+                    const labels = tvMazeData?.status === 'Ended'
+                        ? [...showProviders, { '999999999': 'Ended' }]
+                        : showProviders;
+
+                    await this.plex.setLabel(show.id, labels);
                 }
             }
 
             progressBar.stop();
+            console.log(style.green(`\n✓ Processed ${showDetails.length} shows\n`));
 
+            // Display tables for each provider
             for (const provider of providers) {
                 const providerId = parseInt(Object.keys(provider)[0]);
                 const providerName = provider[providerId];
-                const table = await this.generateTableForProvider(providerId, showDetails, providers);
+                const table = this.generateTableForProvider(providerId, showDetails, providers);
 
-                console.log(`Table for ${clc.bold.underline(providerName)}:`);
+                console.log(`\nTable for ${style.boldUnderline(providerName)}:`);
                 console.log(table);
             }
+
+            console.log(style.green('\n✓ Done!\n'));
         } catch (error) {
-            console.error(error.message);
+            console.error(style.red(`\n✗ Error: ${error.message}\n`));
+            console.error(error.stack);
+            process.exit(1);
         }
     }
 }
 
 const main = new Main();
 main.start();
+
