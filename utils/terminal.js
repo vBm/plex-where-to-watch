@@ -43,6 +43,7 @@ export const style = {
     cyan: (text) => `${colors.cyan}${text}${colors.reset}`,
     magenta: (text) => `${colors.magenta}${text}${colors.reset}`,
     bold: (text) => `${colors.bold}${text}${colors.reset}`,
+    dim: (text) => `${colors.dim}${text}${colors.reset}`,
     underline: (text) => `${colors.underline}${text}${colors.reset}`,
     boldUnderline: (text) => `${colors.bold}${colors.underline}${text}${colors.reset}`,
 };
@@ -190,4 +191,130 @@ export class Table {
 
         return lines.join('\n');
     }
+}
+
+/**
+ * Interactive multi-select prompt for terminal
+ */
+export class MultiSelect {
+    constructor(message, choices) {
+        this.message = message;
+        this.choices = choices.map((choice, index) => ({
+            name: typeof choice === 'string' ? choice : choice.name,
+            value: typeof choice === 'string' ? choice : choice.value,
+            selected: typeof choice === 'object' ? choice.selected ?? false : false,
+            index
+        }));
+        this.cursorIndex = 0;
+    }
+
+    /**
+     * Render the current state of the multi-select
+     */
+    render() {
+        // Clear screen and move cursor to top
+        Bun.write(Bun.stdout, '\x1b[2J\x1b[H');
+
+        // Display message
+        Bun.write(Bun.stdout, `${style.bold(this.message)}\n`);
+        Bun.write(Bun.stdout, style.dim('(Use arrow keys to move, space to select, enter to confirm)\n\n'));
+
+        // Calculate viewport (show max 20 items at a time)
+        const viewportHeight = 20;
+        const totalItems = this.choices.length;
+
+        // Calculate scroll offset to keep cursor in view
+        let scrollOffset = Math.max(0, this.cursorIndex - Math.floor(viewportHeight / 2));
+        scrollOffset = Math.min(scrollOffset, Math.max(0, totalItems - viewportHeight));
+
+        const visibleStart = scrollOffset;
+        const visibleEnd = Math.min(scrollOffset + viewportHeight, totalItems);
+
+        // Show scroll indicator at top if not at start
+        if (scrollOffset > 0) {
+            Bun.write(Bun.stdout, style.dim(`  ↑ ${scrollOffset} more above...\n`));
+        }
+
+        // Display visible choices
+        for (let i = visibleStart; i < visibleEnd; i++) {
+            const choice = this.choices[i];
+            const cursor = choice.index === this.cursorIndex ? style.cyan('❯') : ' ';
+            const checkbox = choice.selected ? style.green('◉') : style.dim('◯');
+            const label = choice.index === this.cursorIndex
+                ? style.cyan(choice.name)
+                : choice.name;
+
+            Bun.write(Bun.stdout, `${cursor} ${checkbox} ${label}\n`);
+        }
+
+        // Show scroll indicator at bottom if not at end
+        if (visibleEnd < totalItems) {
+            Bun.write(Bun.stdout, style.dim(`  ↓ ${totalItems - visibleEnd} more below...\n`));
+        }
+
+        // Show selection count
+        const selectedCount = this.choices.filter(c => c.selected).length;
+        Bun.write(Bun.stdout, `\n${style.bold(`Selected: ${selectedCount}/${totalItems}`)}\n`);
+    }
+
+    /**
+     * Run the interactive prompt
+     * @returns {Promise<Array>} Selected values
+     */
+    async run() {
+        return new Promise((resolve) => {
+            // Set stdin to raw mode for keyboard input
+            process.stdin.setRawMode(true);
+            process.stdin.resume();
+
+            this.render();
+
+            const onData = (data) => {
+                const key = data.toString();
+
+                // Handle different key inputs
+                if (key === '\x1b[A') { // Up arrow
+                    this.cursorIndex = Math.max(0, this.cursorIndex - 1);
+                    this.render();
+                } else if (key === '\x1b[B') { // Down arrow
+                    this.cursorIndex = Math.min(this.choices.length - 1, this.cursorIndex + 1);
+                    this.render();
+                } else if (key === ' ') { // Spacebar
+                    this.choices[this.cursorIndex].selected = !this.choices[this.cursorIndex].selected;
+                    this.render();
+                } else if (key === '\r' || key === '\n') { // Enter
+                    // Clean up
+                    process.stdin.setRawMode(false);
+                    process.stdin.pause();
+                    process.stdin.removeListener('data', onData);
+
+                    // Clear screen and move cursor to top
+                    Bun.write(Bun.stdout, '\x1b[2J\x1b[H');
+
+                    // Return selected values
+                    const selected = this.choices
+                        .filter(choice => choice.selected)
+                        .map(choice => choice.value);
+                    resolve(selected);
+                } else if (key === '\x03') { // Ctrl+C
+                    process.stdin.setRawMode(false);
+                    process.stdin.pause();
+                    process.exit(0);
+                }
+            };
+
+            process.stdin.on('data', onData);
+        });
+    }
+}
+
+/**
+ * Helper function to create and run a multi-select prompt
+ * @param {string} message - Prompt message
+ * @param {Array} choices - Array of choices (strings or {name, value, selected} objects)
+ * @returns {Promise<Array>} Selected values
+ */
+export async function multiSelect(message, choices) {
+    const prompt = new MultiSelect(message, choices);
+    return await prompt.run();
 }

@@ -46,6 +46,68 @@ export default class JustWatchPlugin {
     }
 
     /**
+     * Get all available streaming providers from JustWatch (unfiltered)
+     * @returns {Promise<Array<{packageId: number, clearName: string}>>} Array of all provider objects
+     */
+    async getAllProviders() {
+        try {
+            const query = {
+                operationName: "GetPackages",
+                variables: { platform: "WEB", country: this.country },
+                query: `
+                    query GetPackages($platform: Platform! = WEB, $country: Country!) {
+                        packages(country: $country, platform: $platform, includeAddons: false) {
+                            ...Package
+                            bundles(platform: $platform, country: $country) {
+                                id
+                                bundleId
+                                technicalName
+                                selected
+                                packages(country: $country, platform: $platform) {
+                                    clearName
+                                    __typename
+                                }
+                                __typename
+                            }
+                            addons(country: $country, platform: $platform) {
+                                ...Package
+                                __typename
+                            }
+                            __typename
+                        }
+                    }
+
+                    fragment Package on Package {
+                        clearName
+                        id
+                        shortName
+                        technicalName
+                        packageId
+                        selected
+                        monetizationTypes
+                        addonParent(country: $country, platform: $platform) {
+                            id
+                            __typename
+                        }
+                        __typename
+                    }
+                `,
+            };
+
+            const dataRaw = await this.makeApiRequest(query, { platform: "WEB", country: this.country });
+            const data = dataRaw.data?.packages ?? [];
+
+            // Return all providers with their package IDs and names
+            return data.map(provider => ({
+                packageId: provider.packageId,
+                clearName: provider.clearName
+            }));
+        } catch (error) {
+            throw new Error(`Error fetching all JustWatch providers: ${error.message}`);
+        }
+    }
+
+    /**
      * Get available streaming providers from JustWatch
      * @returns {Promise<Array<Object>>} Array of provider objects with ID and name
      */

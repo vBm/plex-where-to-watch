@@ -1,7 +1,7 @@
 import PlexPlugin from './plugins/plex.js';
 import JustWatchPlugin from './plugins/justwatch.js';
 import TVMazePlugin from './plugins/tvmaze.js';
-import { ProgressBar, Table, style } from './utils/terminal.js';
+import { ProgressBar, Table, style, multiSelect } from './utils/terminal.js';
 
 /**
  * Main application class for Plex Where to Watch
@@ -72,8 +72,32 @@ class Main {
             const tvShows = await this.plex.getTVShows();
             console.log(style.green(`✓ Found ${tvShows.length} TV shows\n`));
 
-            console.log('Fetching streaming providers...');
-            const providers = await this.justwatch.getAvailableProviders();
+            // Fetch all available providers and let user select
+            console.log('Fetching available streaming providers...');
+            const allProviders = await this.justwatch.getAllProviders();
+            console.log(style.green(`✓ Found ${allProviders.length} providers\n`));
+
+            // Create choices for multi-select, pre-selecting config providers
+            const choices = allProviders.map(provider => ({
+                name: provider.clearName,
+                value: provider,
+                selected: this.justwatch.providers.includes(provider.clearName)
+            }));
+
+            // Interactive provider selection
+            const selectedProviders = await multiSelect(
+                '📺 Select streaming providers to monitor:',
+                choices
+            );
+
+            if (selectedProviders.length === 0) {
+                console.log(style.yellow('\n⚠️  No providers selected. Exiting.\n'));
+                return;
+            }
+
+            // Convert to the format expected by the rest of the app
+            const providers = selectedProviders.map(p => ({ [p.packageId]: p.clearName }));
+
             console.log(style.green(`✓ Monitoring ${providers.length} providers\n`));
 
             // Process shows with progress bar
